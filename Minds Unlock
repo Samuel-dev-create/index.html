@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Minds Unlock</title>
+<style>
+body { font-family: Arial; display: flex; justify-content: center; align-items: center; height: 100vh; background: #f0f4f8; margin: 0; }
+#app { background: white; padding: 30px; border-radius: 12px; box-shadow: 0 5px 20px rgba(0,0,0,0.1); text-align: center; width: 350px; }
+input, select, button { padding: 10px; margin: 10px 0; width: 100%; font-size: 16px; }
+#loader { display: none; margin: 20px auto; border: 6px solid #f3f3f3; border-top: 6px solid #3498db; border-radius: 50%; width: 50px; height: 50px; animation: spin 1s linear infinite; }
+@keyframes spin { 0% { transform: rotate(0deg);} 100% { transform: rotate(360deg);} }
+.question { margin: 20px 0; }
+#hint { color: #555; font-style: italic; }
+</style>
+</head>
+<body>
+<div id="app">
+  <h1>Minds Unlock</h1>
+  <div id="setup">
+    <input type="text" id="bookName" placeholder="Book Name" required>
+    <input type="text" id="authorName" placeholder="Book Author" required>
+    <select id="difficulty">
+      <option value="easy">Easy</option>
+      <option value="medium">Medium</option>
+      <option value="hard">Hard</option>
+    </select>
+    <button id="startBtn">Start Quiz</button>
+  </div>
+
+  <div id="loader"></div>
+
+  <div id="quiz" style="display:none;">
+    <div id="questionContainer"></div>
+    <input type="text" id="answerInput" placeholder="Your answer">
+    <button id="submitBtn">Submit</button>
+    <div id="hint"></div>
+  </div>
+
+  <div id="congrats" style="display:none;">
+    <h2>Congratulations! 🎉</h2>
+    <p>The app will close in 3 seconds...</p>
+  </div>
+</div>
+
+<script>
+// ==== CONFIG ====
+let openAIKey = ""; // Paste your OpenAI API key here for testing
+
+// ==== STATE ====
+let currentQuestions = [];
+let currentIndex = 0;
+let wrongAttempts = 0;
+
+// ==== ELEMENTS ====
+const setupEl = document.getElementById("setup");
+const loaderEl = document.getElementById("loader");
+const quizEl = document.getElementById("quiz");
+const congratsEl = document.getElementById("congrats");
+const questionContainerEl = document.getElementById("questionContainer");
+const answerInputEl = document.getElementById("answerInput");
+const hintEl = document.getElementById("hint");
+
+// ==== EVENT LISTENERS ====
+document.getElementById("startBtn").addEventListener("click", startQuiz);
+document.getElementById("submitBtn").addEventListener("click", submitAnswer);
+
+// ==== FUNCTIONS ====
+async function startQuiz() {
+  const bookName = document.getElementById("bookName").value.trim();
+  const authorName = document.getElementById("authorName").value.trim();
+  const difficulty = document.getElementById("difficulty").value;
+
+  if(!bookName || !authorName) { alert("Enter both book name and author."); return; }
+  if(!openAIKey) {
+    openAIKey = prompt("Enter your OpenAI API Key:");
+    if(!openAIKey) { alert("API Key required."); return; }
+  }
+
+  setupEl.style.display = "none";
+  loaderEl.style.display = "block";
+
+  try {
+    const prompt = `
+Generate 5 ${difficulty} questions with answers about the book "${bookName}" by ${authorName}.
+Return JSON like: [{"question": "...", "answer": "..."}, ...]
+`;
+
+    const res = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": "Bearer " + openAIKey
+      },
+      body: JSON.stringify({
+        model: "gpt-4",
+        messages: [{ role: "user", content: prompt }],
+        temperature: 0.7
+      })
+    });
+
+    const data = await res.json();
+    const text = data.choices[0].message.content;
+    currentQuestions = JSON.parse(text);
+    currentIndex = 0;
+    wrongAttempts = 0;
+
+    loaderEl.style.display = "none";
+    quizEl.style.display = "block";
+    showQuestion();
+  } catch(err) {
+    console.error(err);
+    alert("Failed to generate questions. Check console.");
+  }
+}
+
+function showQuestion() {
+  const question = currentQuestions[currentIndex].question;
+  questionContainerEl.innerText = question;
+  answerInputEl.value = "";
+  hintEl.innerText = "";
+  wrongAttempts = 0;
+}
+
+function submitAnswer() {
+  const userAnswer = answerInputEl.value.trim().toLowerCase();
+  const correctAnswer = currentQuestions[currentIndex].answer.toLowerCase();
+
+  const keywords = correctAnswer.split(" ");
+  const matchedKeywords = keywords.filter(k => userAnswer.includes(k)).length;
+
+  if(userAnswer === correctAnswer || matchedKeywords >= Math.ceil(keywords.length / 2)) {
+    currentIndex++;
+    if(currentIndex >= currentQuestions.length) showCongrats();
+    else showQuestion();
+  } else {
+    wrongAttempts++;
+    if(wrongAttempts >= 2) showHint(correctAnswer);
+    alert("Incorrect! Try again.");
+  }
+}
+
+function showHint(answer) {
+  const words = answer.split(" ");
+  const hintWords = words.map((w, i) => i % 2 === 0 ? w[0] + "_".repeat(w.length-1) : "_".repeat(w.length));
+  hintEl.innerText = "Hint: " + hintWords.join(" ");
+}
+
+function showCongrats() {
+  quizEl.style.display = "none";
+  congratsEl.style.display = "block";
+  setTimeout(() => window.close(), 3000);
+}
+</script>
+</body>
+</html>
